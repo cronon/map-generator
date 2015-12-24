@@ -7,12 +7,12 @@ var voronoi = new Voronoi();
 var bbox = {xl: 0, xr: width, yt: 0, yb: height}; // xl is x-left, xr is x-right, yt is y-top, and yb is y-bottom
 var sites = [{"x":374,"y":310,"voronoiId":31},{"x":25,"y":320,"voronoiId":33},{"x":392,"y":400,"voronoiId":43},{"x":85,"y":262,"voronoiId":27},{"x":294,"y":123,"voronoiId":9},{"x":475,"y":452,"voronoiId":46},{"x":470,"y":73,"voronoiId":5},{"x":21,"y":500,"voronoiId":48},{"x":354,"y":76,"voronoiId":6},{"x":472,"y":200,"voronoiId":19},{"x":462,"y":149,"voronoiId":14},{"x":71,"y":388,"voronoiId":42},{"x":277,"y":42,"voronoiId":2},{"x":115,"y":488,"voronoiId":47},{"x":484,"y":79,"voronoiId":7},{"x":81,"y":372,"voronoiId":40},{"x":148,"y":500,"voronoiId":49},{"x":135,"y":248,"voronoiId":25},{"x":329,"y":256,"voronoiId":26},{"x":449,"y":371,"voronoiId":39},{"x":95,"y":371,"voronoiId":38},{"x":308,"y":145,"voronoiId":11},{"x":206,"y":329,"voronoiId":35},{"x":78,"y":416,"voronoiId":44},{"x":148,"y":315,"voronoiId":32},{"x":13,"y":150,"voronoiId":15},{"x":359,"y":146,"voronoiId":13},{"x":408,"y":136,"voronoiId":10},{"x":350,"y":199,"voronoiId":18},{"x":421,"y":358,"voronoiId":36},{"x":474,"y":358,"voronoiId":37},{"x":288,"y":291,"voronoiId":29},{"x":347,"y":113,"voronoiId":8},{"x":422,"y":63,"voronoiId":4},{"x":413,"y":323,"voronoiId":34},{"x":151,"y":164,"voronoiId":16},{"x":288,"y":385,"voronoiId":41},{"x":58,"y":220,"voronoiId":20},{"x":396,"y":145,"voronoiId":12},{"x":39,"y":282,"voronoiId":28},{"x":494,"y":229,"voronoiId":22},{"x":310,"y":46,"voronoiId":3},{"x":430,"y":233,"voronoiId":24},{"x":154,"y":5,"voronoiId":0},{"x":496,"y":229,"voronoiId":23},{"x":237,"y":168,"voronoiId":17},{"x":378,"y":427,"voronoiId":45},{"x":248,"y":221,"voronoiId":21},{"x":137,"y":27,"voronoiId":1},{"x":104,"y":299,"voronoiId":30}]
 
-const sitesCount = 2048
+const sitesCount = 512
 sites = newSites(sitesCount)
 function newSites(count) {return _.range(count).map( () => ({x: _.random(width), y: _.random(height)}))}
 
 //const colors = "green blue yellow brown fuchsia black aqua lime pink maroon".split(' ')
-const colors = _.range(64).map(i => '#' + _.random(0xfff).toString(16))
+const colors = _.range(16).map(i => '#' + _.random(0xfff).toString(16))
 // a 'vertex' is an object exhibiting 'x' and 'y' properties. The
 // Voronoi object will add a unique 'voronoiId' property to all
 // sites. The 'voronoiId' can be used as a key to lookup the associated cell
@@ -20,20 +20,37 @@ const colors = _.range(64).map(i => '#' + _.random(0xfff).toString(16))
 
 
 var diagram = voronoi.compute(sites, bbox);
-diagram = (relax(relax(diagram)))
-drawDiagram(ctx, diagram, colors)
+diagram = relax(relax(relax(relax(diagram))))
+var err = 1
+while(err){
+  try{
+    drawDiagram(ctx, diagram, colors)
+    err = false
+  } catch(e){
+    err = true
+  }
+}
 
 function drawDiagram(ctx, diagram, colors){
   ctx.clearRect(0,0, ctx.canvas.width, ctx.canvas.height)
   ctx.fillStyle="red"
   diagram.cells.forEach(c => {
-    circle(ctx,c.site.x, c.site.y,1)
+    // circle(ctx,c.site.x, c.site.y,1)
   })
 
-  const provinces = colors.map((color) => {
-    const cell = _.find(diagram.cells, c => !c.color)
-    return colorDiagram(diagram, color, sitesCount/colors.length, cell)
+  var cell = _.find(diagram.cells, (c) => !c.color)
+  const provinces = colors.map(color => {
+    const province = colorDiagram(diagram, color, sitesCount/colors.length, cell)
+    province.forEach(cell => drawCell(ctx, cell))
+    const halfedges = _.flatten(province.map(c => c.halfedges))
+    const rSites = halfedges.map(h => h.edge.rSite).filter(s => s)
+    const rCells = rSites.map(s => findCell(diagram.cells, s))
+    const cells = rCells.filter(c => !c.color)
+    // console.log(cells)
+    cell = _.sample(cells)
+    return province
   })
+
   const borders = provinces.map(p => {
     return _.flatten(p.map(cell => {
       return cell.halfedges.filter(h => {
@@ -43,6 +60,9 @@ function drawDiagram(ctx, diagram, colors){
       })
     }))
   })
+  // diagram.cells.forEach(c => {
+  //   drawCell(ctx, c)
+  // })
   borders.forEach(provinceBorder => {
     provinceBorder.forEach(h => {
         const path = new Path2D()
@@ -54,26 +74,22 @@ function drawDiagram(ctx, diagram, colors){
         ctx.stroke(path)
     })
   })
-  console.log(borders)
-  // diagram.cells.forEach(c => {
-  //   var path = new Path2D()
-  //   path.moveTo(c.halfedges[0].edge.va.x, c.halfedges[0].edge.va.y)
-  //   ctx.strokeStyle= "black"
-  //   path = c.halfedges
-  //     .reduce((path, h) => {
-  //       var p1 = h.getStartpoint()
-  //       var p2 = h.getEndpoint()
-  //       path.lineTo(p1.x, p1.y)
-  //       path.lineTo(p2.x, p2.y)
-  //       return path
-  //     }, path)
-  //   ctx.fillStyle = c.color || 'white';
-  //   ctx.fill(path)
-  //   ctx.fillStyle = 'black'; ctx.font = '16px sans-serif'
-  //   // ctx.fillText(c.site.voronoiId, c.site.x, c.site.y)
-  // })
 }
-
+function drawCell(ctx, cell){
+  var path = new Path2D()
+    path.moveTo(cell.halfedges[0].edge.va.x, cell.halfedges[0].edge.va.y)
+    ctx.strokeStyle= "black"
+    path = cell.halfedges
+      .reduce((path, h) => {
+        var p1 = h.getStartpoint()
+        var p2 = h.getEndpoint()
+        path.lineTo(p1.x, p1.y)
+        path.lineTo(p2.x, p2.y)
+        return path
+      }, path)
+    ctx.fillStyle = cell.color || 'black';
+    ctx.fill(path)
+}
 function colorDiagram(diagram, color, count, startCell){
   var queue = [startCell]
   var result = [startCell]
@@ -81,7 +97,7 @@ function colorDiagram(diagram, color, count, startCell){
     var c = queue.shift()
     c.halfedges.forEach(h => {
       var e = h.edge
-      var nextSite = e.rSite == c.site ? e.lSite : e.rSite
+      var nextSite = e.rSite
       if(nextSite && count){
         var nextCell = findCell(diagram.cells, nextSite)
         if(!nextCell.color){
@@ -117,7 +133,7 @@ function circle(ctx, x,y,radius){
 
 function findCell(cells, site){
   return _.find(cells, (cell) => {
-    return site && cell.site && cell.site.x == site.x && cell.site.y == site.y
+    return site && cell.site.voronoiId == site.voronoiId
   })
 }
 
